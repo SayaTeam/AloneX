@@ -43,7 +43,7 @@ class Config:
         self.PLAYLIST_LIMIT = get_int("PLAYLIST_LIMIT", 20000000000)
         self.COOKIES_URL = [
             url for url in getenv("COOKIES_URL", "").split(" ")
-            if url and "batbin.me" in url
+            if url
         ]
         self.DEFAULT_THUMB = getenv("DEFAULT_THUMB", "https://files.catbox.moe/pd8fv9.jpg")
         self.PING_IMG = getenv("PING_IMG", "https://files.catbox.moe/pd8fv9.jpg")

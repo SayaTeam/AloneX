@@ -106,11 +106,17 @@ class YouTube:
         async with aiohttp.ClientSession() as session:
             for i, url in enumerate(urls):
                 path = f"{self.cookie_dir}/cookie_{i}.txt"
-                link = "https://batbin.me/api/v2/paste/" + url.split("/")[-1]
-                async with session.get(link) as resp:
-                    resp.raise_for_status()
-                    with open(path, "wb") as fw:
-                        fw.write(await resp.read())
+                if "batbin.me" in url:
+                    link = "https://batbin.me/api/v2/paste/" + url.split("/")[-1]
+                else:
+                    link = url
+                try:
+                    async with session.get(link) as resp:
+                        resp.raise_for_status()
+                        with open(path, "wb") as fw:
+                            fw.write(await resp.read())
+                except Exception as e:
+                    logger.error(f"Failed to download cookie from {url}: {e}")
         logger.info(f"Cookies saved in {self.cookie_dir}.")
 
     def valid(self, url: str) -> bool:
