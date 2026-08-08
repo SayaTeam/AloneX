@@ -1,21 +1,21 @@
 # Copyright (c) 2025 TheHamkerAlone
 # Licensed under the MIT License.
 # This file is part of AloneXMusic
-#ALONE-CODER
 
 import time
 import logging
-import static_ffmpeg
-static_ffmpeg.add_paths()
 from logging.handlers import RotatingFileHandler
+
+handlers = [logging.StreamHandler()]
+try:
+    handlers.append(RotatingFileHandler("log.txt", maxBytes=10485760, backupCount=5))
+except Exception:
+    pass
 
 logging.basicConfig(
     format="[%(asctime)s - %(levelname)s] - %(name)s: %(message)s",
     datefmt="%d-%b-%y %H:%M:%S",
-    handlers=[
-        RotatingFileHandler("log.txt", maxBytes=10485760, backupCount=5),
-        logging.StreamHandler(),
-    ],
+    handlers=handlers,
     level=logging.INFO,
 )
 logging.getLogger("httpx").setLevel(logging.ERROR)
@@ -25,6 +25,11 @@ logging.getLogger("pyrogram").setLevel(logging.ERROR)
 logging.getLogger("pytgcalls").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
+try:
+    import static_ffmpeg
+    static_ffmpeg.add_paths()
+except Exception as ex:
+    logger.warning(f"static_ffmpeg add_paths notice: {ex}")
 
 __version__ = "3.0.1"
 
@@ -71,8 +76,17 @@ async def stop() -> None:
         except:
             pass
 
-    await app.exit()
-    await userbot.exit()
-    await db.close()
+    try:
+        await app.exit()
+    except:
+        pass
+    try:
+        await userbot.exit()
+    except:
+        pass
+    try:
+        await db.close()
+    except:
+        pass
 
     logger.info("Stopped.\n")
