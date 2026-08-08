@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: AloneXMusicBot
+    env: python
+    buildCommand: pip install -U pip && pip install -r requirements.txt
+    startCommand: python3 -m AloneX
+    envVars:
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: MONGO_URL
+        sync: false
+      - key: LOGGER_ID
+        sync: false
+      - key: OWNER_ID
+        sync: false
+      - key: SESSION
+        sync: false
+      - key: PORT
+        value: 8080
+      - key: AUTO_END
+        value: "false"
+      - key: AUTO_LEAVE
+        value: "false"
+      - key: VIDEO_PLAY
+        value: "true"
