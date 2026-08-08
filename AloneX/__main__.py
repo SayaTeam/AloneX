@@ -26,7 +26,10 @@ async def main():
     logger.info(f"Loaded {len(all_modules)} modules.")
 
     if config.COOKIES_URL:
-        await yt.save_cookies(config.COOKIES_URL)
+        try:
+            await yt.save_cookies(config.COOKIES_URL)
+        except Exception as ex:
+            logger.error(f"Error saving cookies: {ex}")
 
     sudoers = await db.get_sudoers()
     app.sudoers.update(sudoers)

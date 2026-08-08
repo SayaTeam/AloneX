@@ -55,7 +55,11 @@ class MongoDB:
             logger.info(f"Database connection successful. ({time() - start:.2f}s)")
             await self.load_cache()
         except Exception as e:
-            raise SystemExit(f"Database connection failed: {type(e).__name__}") from e
+            logger.error(f"Database connection error: {e}")
+            try:
+                await self.load_cache()
+            except:
+                pass
 
     async def close(self) -> None:
         """Close the connection to the database."""
