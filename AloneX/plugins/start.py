@@ -38,12 +38,19 @@ async def start(_, message: types.Message):
     )
 
     key = buttons.start_key(message.lang, private)
-    await message.reply_photo(
-        photo=config.START_IMG,
-        caption=_text,
-        reply_markup=key,
-        quote=not private,
-    )
+    try:
+        await message.reply_photo(
+            photo=config.START_IMG,
+            caption=_text,
+            reply_markup=key,
+            quote=not private,
+        )
+    except Exception:
+        await message.reply_text(
+            text=_text,
+            reply_markup=key,
+            quote=not private,
+        )
 
     if private:
         if message.from_user:
@@ -83,11 +90,17 @@ async def _new_member(_, message: types.Message):
     for member in message.new_chat_members:
         if member.id == app.id:
             key = buttons.start_key(message.lang, False)
-            await message.reply_photo(
-                photo=config.START_IMG,
-                caption=message.lang["start_gp"].format(app.name),
-                reply_markup=key,
-            )
+            try:
+                await message.reply_photo(
+                    photo=config.START_IMG,
+                    caption=message.lang["start_gp"].format(app.name),
+                    reply_markup=key,
+                )
+            except Exception:
+                await message.reply_text(
+                    text=message.lang["start_gp"].format(app.name),
+                    reply_markup=key,
+                )
             if await db.is_chat(message.chat.id):
                 return
             await utils.send_log(message, True)
