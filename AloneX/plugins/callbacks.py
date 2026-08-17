@@ -109,9 +109,15 @@ async def _controls(_, query: types.CallbackQuery):
             keyboard = buttons.controls(
                 chat_id, status=status if action != "resume" else None
             )
-        await query.edit_message_text(
-            f"{mtext}\n\n<blockquote>{reply}</blockquote>", reply_markup=keyboard
-        )
+            new_text = f"{mtext}\n\n<blockquote>{reply}</blockquote>"
+            if query.message and (query.message.photo or query.message.caption):
+                await query.edit_message_caption(
+                    caption=new_text, reply_markup=keyboard
+                )
+            else:
+                await query.edit_message_text(
+                    text=new_text, reply_markup=keyboard
+                )
     except:
         pass
 
@@ -122,19 +128,34 @@ async def _help(_, query: types.CallbackQuery):
     data = query.data.split()
 
     if query.data == "help_back_start":
-        _text = query.lang["start_pm"].format(query.from_user.first_name, app.name)
+        user_name = query.from_user.first_name if query.from_user else "User"
+        _text = query.lang["start_pm"].format(user_name, app.name)
+        if query.message and (query.message.photo or query.message.caption):
+            return await query.edit_message_caption(
+                caption=_text,
+                reply_markup=buttons.start_key(query.lang, True)
+            )
         return await query.edit_message_text(
             text=_text,
             reply_markup=buttons.start_key(query.lang, True)
         )
 
     if len(data) == 1:
+        if query.message and (query.message.photo or query.message.caption):
+            return await query.edit_message_caption(
+                caption=query.lang["help_menu"],
+                reply_markup=buttons.help_markup(query.lang)
+            )
         return await query.edit_message_text(
             text=query.lang["help_menu"],
             reply_markup=buttons.help_markup(query.lang)
         )
 
     if data[1] == "back":
+        if query.message and (query.message.photo or query.message.caption):
+            return await query.edit_message_caption(
+                caption=query.lang["help_menu"], reply_markup=buttons.help_markup(query.lang)
+            )
         return await query.edit_message_text(
             text=query.lang["help_menu"], reply_markup=buttons.help_markup(query.lang)
         )
@@ -145,10 +166,16 @@ async def _help(_, query: types.CallbackQuery):
         except:
             pass
 
-    await query.edit_message_text(
-        text=query.lang[f"help_{data[1]}"],
-        reply_markup=buttons.help_markup(query.lang, True),
-    )
+    if query.message and (query.message.photo or query.message.caption):
+        await query.edit_message_caption(
+            caption=query.lang[f"help_{data[1]}"],
+            reply_markup=buttons.help_markup(query.lang, True),
+        )
+    else:
+        await query.edit_message_text(
+            text=query.lang[f"help_{data[1]}"],
+            reply_markup=buttons.help_markup(query.lang, True),
+        )
 
 
 @app.on_callback_query(filters.regex("settings") & ~app.bl_users)

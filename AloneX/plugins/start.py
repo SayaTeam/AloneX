@@ -23,15 +23,16 @@ async def _help(_, m: types.Message):
 @app.on_message(filters.command(["start"]))
 @lang.language()
 async def start(_, message: types.Message):
-    if message.from_user.id in app.bl_users and message.from_user.id not in db.notified:
+    if message.from_user and message.from_user.id in app.bl_users and message.from_user.id not in db.notified:
         return await message.reply_text(message.lang["bl_user_notify"])
 
     if len(message.command) > 1 and message.command[1] == "help":
         return await _help(_, message)
 
     private = message.chat.type == enums.ChatType.PRIVATE
+    user_name = message.from_user.first_name if message.from_user else (message.chat.title or "User")
     _text = (
-        message.lang["start_pm"].format(message.from_user.first_name, app.name)
+        message.lang["start_pm"].format(user_name, app.name)
         if private
         else message.lang["start_gp"].format(app.name)
     )
@@ -45,10 +46,11 @@ async def start(_, message: types.Message):
     )
 
     if private:
-        if await db.is_user(message.from_user.id):
-            return
-        await utils.send_log(message)
-        await db.add_user(message.from_user.id)
+        if message.from_user:
+            if await db.is_user(message.from_user.id):
+                return
+            await utils.send_log(message)
+            await db.add_user(message.from_user.id)
     else:
         if await db.is_chat(message.chat.id):
             return
@@ -80,6 +82,12 @@ async def _new_member(_, message: types.Message):
     await asyncio.sleep(3)
     for member in message.new_chat_members:
         if member.id == app.id:
+            key = buttons.start_key(message.lang, False)
+            await message.reply_photo(
+                photo=config.START_IMG,
+                caption=message.lang["start_gp"].format(app.name),
+                reply_markup=key,
+            )
             if await db.is_chat(message.chat.id):
                 return
             await utils.send_log(message, True)

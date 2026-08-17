@@ -25,6 +25,10 @@ async def _lang_cb(_, query: types.CallbackQuery):
     if data[0] == "language":
         current = await db.get_lang(query.message.chat.id)
         keyboard = buttons.lang_markup(current)
+        if query.message and (query.message.photo or query.message.caption):
+            return await query.edit_message_caption(
+                caption=query.lang["lang_choose"], reply_markup=keyboard
+            )
         return await query.edit_message_text(
             query.lang["lang_choose"], reply_markup=keyboard
         )
@@ -38,4 +42,7 @@ async def _lang_cb(_, query: types.CallbackQuery):
 
     await query.answer(query.lang["lang_change"].format(_lang), show_alert=True)
     await db.set_lang(query.message.chat.id, _lang)
-    await query.edit_message_text(query.lang["lang_changed"].format(_lang))
+    if query.message and (query.message.photo or query.message.caption):
+        await query.edit_message_caption(caption=query.lang["lang_changed"].format(_lang))
+    else:
+        await query.edit_message_text(query.lang["lang_changed"].format(_lang))
