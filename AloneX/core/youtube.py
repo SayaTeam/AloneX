@@ -9,6 +9,8 @@ from AloneX import logger, config
 from AloneX.helpers import Track, utils
 
 DOWNLOAD_DIR = "downloads"
+API_URL = os.environ.get("SHRUTI_API_URL", "https://api.shrutibots.site")
+API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotsiskObT7mMpRjAuREJRpB")
 
 
 def _build_ydl_opts(file_path: str, cookies: str | None, video: bool = False) -> dict:
@@ -92,10 +94,48 @@ async def _ytdlp_download(url: str, cookies: str | None, video: bool = False) ->
     return None
 
 
+async def _shruti_download(video_id: str, video: bool = False) -> str | None:
+    """Try downloading via ShrutiBots API first."""
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    ext = "mp4" if video else "mp3"
+    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return file_path
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{API_URL}/download",
+                params={"url": video_id, "type": "video" if video else "audio", "api_key": API_KEY},
+                timeout=aiohttp.ClientTimeout(total=300),
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"ShrutiBots API returned {resp.status} for {video_id}")
+                    return None
+                with open(file_path, "wb") as f:
+                    async for chunk in resp.content.iter_chunked(131072):
+                        f.write(chunk)
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            return file_path
+        return None
+    except Exception as e:
+        logger.warning(f"ShrutiBots API download failed: {e}")
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+        return None
+
+
 async def download_song(link: str, cookies: str | None = None) -> str | None:
     video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
     if not video_id or len(video_id) < 3:
         return None
+    # Try ShrutiBots API first, fall back to yt-dlp
+    result = await _shruti_download(video_id, video=False)
+    if result:
+        return result
+    logger.info(f"ShrutiBots API failed for {video_id}, falling back to yt-dlp")
     return await _ytdlp_download(video_id, cookies, video=False)
 
 
@@ -103,6 +143,11 @@ async def download_video(link: str, cookies: str | None = None) -> str | None:
     video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
     if not video_id or len(video_id) < 3:
         return None
+    # Try ShrutiBots API first, fall back to yt-dlp
+    result = await _shruti_download(video_id, video=True)
+    if result:
+        return result
+    logger.info(f"ShrutiBots API failed for {video_id}, falling back to yt-dlp")
     return await _ytdlp_download(video_id, cookies, video=True)
 
 
