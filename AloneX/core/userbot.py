@@ -6,7 +6,7 @@ from pyrogram import Client
 from AloneX import config, logger
 
 
-class Userbot(Client):
+class Userbot:
     def __init__(self):
         """
         Initializes the userbot with multiple clients.

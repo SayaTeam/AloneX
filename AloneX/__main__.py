@@ -59,8 +59,13 @@ async def main():
     except Exception as ex:
         logger.error(f"Error loading sudoers: {ex}")
 
-    await idle()
-    await stop()
+    try:
+        await idle()
+    except Exception as ex:
+        logger.warning(f"Idle notice: {ex}")
+
+    while True:
+        await asyncio.sleep(3600)
 
 
 if __name__ == "__main__":

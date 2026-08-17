@@ -8,7 +8,10 @@ from ntgcalls import (ConnectionNotFound, TelegramServerError,
 from pyrogram.errors import MessageIdInvalid
 from pyrogram.types import InputMediaPhoto, Message
 from pytgcalls import PyTgCalls, exceptions, types
-from pytgcalls.pytgcalls_session import PyTgCallsSession
+try:
+    from pytgcalls.pytgcalls_session import PyTgCallsSession
+except Exception:
+    PyTgCallsSession = None
 
 from AloneX import app, config, db, lang, logger, queue, userbot, yt
 from AloneX.helpers import Media, Track, buttons, thumb
@@ -184,10 +187,14 @@ class TgCall(PyTgCalls):
 
 
     async def boot(self) -> None:
-        PyTgCallsSession.notice_displayed = True
+        if PyTgCallsSession and hasattr(PyTgCallsSession, "notice_displayed"):
+            PyTgCallsSession.notice_displayed = True
         for ub in userbot.clients:
-            client = PyTgCalls(ub, cache_duration=100)
-            await client.start()
-            self.clients.append(client)
-            await self.decorators(client)
+            try:
+                client = PyTgCalls(ub, cache_duration=100)
+                await client.start()
+                self.clients.append(client)
+                await self.decorators(client)
+            except Exception as ex:
+                logger.error(f"Failed to start PyTgCalls client: {ex}")
         logger.info("PyTgCalls client(s) started.")
