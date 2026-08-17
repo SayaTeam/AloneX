@@ -19,10 +19,12 @@ def _build_ydl_opts(file_path: str, cookies: str | None, video: bool = False) ->
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "retries": 3,
+        "retries": 5,
+        "fragment_retries": 5,
         "socket_timeout": 30,
         "source_address": "0.0.0.0",
         "geo_bypass": True,
+        "extractor_args": {"youtube": {"skip": ["hls", "dash"]}},
         "http_headers": {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -34,9 +36,16 @@ def _build_ydl_opts(file_path: str, cookies: str | None, video: bool = False) ->
     if cookies:
         opts["cookiefile"] = cookies
     if video:
-        opts["format"] = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]"
+        # Permissive video: best mp4 up to 720p, fallback to any best
+        opts["format"] = (
+            "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]"
+            "/bestvideo[height<=720]+bestaudio"
+            "/best[height<=720]"
+            "/best"
+        )
         opts["merge_output_format"] = "mp4"
     else:
+        # Permissive audio: prefer m4a/webm, then any audio, then any best
         opts["format"] = "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
         opts["postprocessors"] = [
             {
@@ -52,42 +61,51 @@ async def _ytdlp_download(url: str, cookies: str | None, video: bool = False) ->
     """Download using yt-dlp in a thread pool executor."""
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     ext = "mp4" if video else "mp3"
-    # Derive a safe filename from the URL
     safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", url)[:50]
     file_path = os.path.join(DOWNLOAD_DIR, f"{safe_id}.{ext}")
-    # outtmpl without extension — yt-dlp adds it
     outtmpl = os.path.join(DOWNLOAD_DIR, f"{safe_id}.%(ext)s")
 
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         return file_path
 
-    opts = _build_ydl_opts(outtmpl, cookies, video)
+    yt_url = f"https://www.youtube.com/watch?v={url}" if len(url) == 11 else url
 
-    def _do_download():
+    def _do_download(fmt_override: str | None = None) -> bool:
         try:
             import yt_dlp
+            opts = _build_ydl_opts(outtmpl, cookies, video)
+            if fmt_override:
+                opts["format"] = fmt_override
+                opts.pop("postprocessors", None)
             with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([f"https://www.youtube.com/watch?v={url}" if len(url) == 11 else url])
+                ydl.download([yt_url])
+            return True
         except Exception as e:
-            logger.error(f"yt-dlp download error: {e}")
+            logger.warning(f"yt-dlp attempt failed ({fmt_override or 'default'}): {e}")
             return False
-        return True
 
     loop = asyncio.get_event_loop()
+
+    # Attempt 1: with preferred format
     ok = await loop.run_in_executor(None, _do_download)
+
+    # Attempt 2: fallback to simplest format
+    if not ok:
+        logger.info("yt-dlp retrying with format=best")
+        ok = await loop.run_in_executor(None, _do_download, "best")
 
     if not ok:
         return None
 
-    # Find the downloaded file (yt-dlp may rename it)
+    # Find the downloaded file (yt-dlp may add/change extension)
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         return file_path
 
-    # Scan directory for recently created file with matching prefix
     try:
         for f in os.listdir(DOWNLOAD_DIR):
-            if f.startswith(safe_id) and os.path.getsize(os.path.join(DOWNLOAD_DIR, f)) > 0:
-                return os.path.join(DOWNLOAD_DIR, f)
+            full = os.path.join(DOWNLOAD_DIR, f)
+            if f.startswith(safe_id) and os.path.getsize(full) > 0:
+                return full
     except Exception:
         pass
 
