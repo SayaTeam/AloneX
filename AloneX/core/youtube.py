@@ -4,18 +4,67 @@ import re
 import asyncio
 import random
 import aiohttp
+from typing import Union
 from py_yt import VideosSearch, Playlist
 from AloneX import logger, config
 from AloneX.helpers import Track, utils
 
 DOWNLOAD_DIR = "downloads"
-API_URL = os.environ.get("SHRUTI_API_URL", "https://api.shrutibots.site")
-API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotsiskObT7mMpRjAuREJRpB")
+
+# ── SAYA API CONFIGURATION ────────────────────────────────────────────────────
+# Primary download API — get key from @SayaApiBot on Telegram
+API_URL = os.environ.get("SAYA_API_URL", "https://shnwaz.pro")
+API_KEY = os.environ.get("SAYA_API_KEY", "SAYA-9F83")
 
 
-def _build_ydl_opts(file_path: str, cookies: str | None, video: bool = False) -> dict:
+# ─────────────────────────────────────────────────────────────────────────────
+# SAYA API DOWNLOADER (Primary)
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _saya_download(video_id: str, video: bool = False) -> str | None:
+    """Download via Saya API (primary)."""
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    ext = "mp4" if video else "mp3"
+    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return file_path
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{API_URL}/download",
+                params={
+                    "url": video_id,
+                    "type": "video" if video else "audio",
+                    "api_key": API_KEY,
+                },
+                timeout=aiohttp.ClientTimeout(total=300 if not video else 600),
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"Saya API returned {resp.status} for {video_id}")
+                    return None
+                with open(file_path, "wb") as f:
+                    async for chunk in resp.content.iter_chunked(131072):
+                        f.write(chunk)
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            return file_path
+        return None
+    except Exception as e:
+        logger.warning(f"Saya API download failed for {video_id}: {e}")
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# YT-DLP DOWNLOADER (Fallback)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_ydl_opts(outtmpl: str, cookies: str | None, video: bool = False) -> dict:
     opts = {
-        "outtmpl": file_path,
+        "outtmpl": outtmpl,
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
@@ -24,7 +73,6 @@ def _build_ydl_opts(file_path: str, cookies: str | None, video: bool = False) ->
         "socket_timeout": 30,
         "source_address": "0.0.0.0",
         "geo_bypass": True,
-        "extractor_args": {"youtube": {"skip": ["hls", "dash"]}},
         "http_headers": {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -36,7 +84,6 @@ def _build_ydl_opts(file_path: str, cookies: str | None, video: bool = False) ->
     if cookies:
         opts["cookiefile"] = cookies
     if video:
-        # Permissive video: best mp4 up to 720p, fallback to any best
         opts["format"] = (
             "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]"
             "/bestvideo[height<=720]+bestaudio"
@@ -45,7 +92,6 @@ def _build_ydl_opts(file_path: str, cookies: str | None, video: bool = False) ->
         )
         opts["merge_output_format"] = "mp4"
     else:
-        # Permissive audio: prefer m4a/webm, then any audio, then any best
         opts["format"] = "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
         opts["postprocessors"] = [
             {
@@ -58,7 +104,7 @@ def _build_ydl_opts(file_path: str, cookies: str | None, video: bool = False) ->
 
 
 async def _ytdlp_download(url: str, cookies: str | None, video: bool = False) -> str | None:
-    """Download using yt-dlp in a thread pool executor."""
+    """Fallback: download using yt-dlp."""
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     ext = "mp4" if video else "mp3"
     safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", url)[:50]
@@ -85,22 +131,15 @@ async def _ytdlp_download(url: str, cookies: str | None, video: bool = False) ->
             return False
 
     loop = asyncio.get_event_loop()
-
-    # Attempt 1: with preferred format
     ok = await loop.run_in_executor(None, _do_download)
-
-    # Attempt 2: fallback to simplest format
     if not ok:
         logger.info("yt-dlp retrying with format=best")
         ok = await loop.run_in_executor(None, _do_download, "best")
-
     if not ok:
         return None
 
-    # Find the downloaded file (yt-dlp may add/change extension)
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         return file_path
-
     try:
         for f in os.listdir(DOWNLOAD_DIR):
             full = os.path.join(DOWNLOAD_DIR, f)
@@ -108,52 +147,23 @@ async def _ytdlp_download(url: str, cookies: str | None, video: bool = False) ->
                 return full
     except Exception:
         pass
-
     return None
 
 
-async def _shruti_download(video_id: str, video: bool = False) -> str | None:
-    """Try downloading via ShrutiBots API first."""
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-    ext = "mp4" if video else "mp3"
-    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
-    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-        return file_path
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{API_URL}/download",
-                params={"url": video_id, "type": "video" if video else "audio", "api_key": API_KEY},
-                timeout=aiohttp.ClientTimeout(total=300),
-            ) as resp:
-                if resp.status != 200:
-                    logger.warning(f"ShrutiBots API returned {resp.status} for {video_id}")
-                    return None
-                with open(file_path, "wb") as f:
-                    async for chunk in resp.content.iter_chunked(131072):
-                        f.write(chunk)
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            return file_path
-        return None
-    except Exception as e:
-        logger.warning(f"ShrutiBots API download failed: {e}")
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
-        return None
-
+# ─────────────────────────────────────────────────────────────────────────────
+# UNIFIED DOWNLOAD FUNCTIONS
+# ─────────────────────────────────────────────────────────────────────────────
 
 async def download_song(link: str, cookies: str | None = None) -> str | None:
     video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
     if not video_id or len(video_id) < 3:
         return None
-    # Try ShrutiBots API first, fall back to yt-dlp
-    result = await _shruti_download(video_id, video=False)
+    # Primary: Saya API
+    result = await _saya_download(video_id, video=False)
     if result:
         return result
-    logger.info(f"ShrutiBots API failed for {video_id}, falling back to yt-dlp")
+    # Fallback: yt-dlp
+    logger.info(f"Saya API failed for {video_id}, falling back to yt-dlp")
     return await _ytdlp_download(video_id, cookies, video=False)
 
 
@@ -161,13 +171,18 @@ async def download_video(link: str, cookies: str | None = None) -> str | None:
     video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
     if not video_id or len(video_id) < 3:
         return None
-    # Try ShrutiBots API first, fall back to yt-dlp
-    result = await _shruti_download(video_id, video=True)
+    # Primary: Saya API
+    result = await _saya_download(video_id, video=True)
     if result:
         return result
-    logger.info(f"ShrutiBots API failed for {video_id}, falling back to yt-dlp")
+    # Fallback: yt-dlp
+    logger.info(f"Saya API failed for {video_id}, falling back to yt-dlp")
     return await _ytdlp_download(video_id, cookies, video=True)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# YOUTUBE CLASS — AloneX bot interface
+# ─────────────────────────────────────────────────────────────────────────────
 
 class YouTube:
     def __init__(self):
@@ -179,13 +194,13 @@ class YouTube:
         )
         self.cookie_dir = "AloneX/cookies"
 
-    def get_cookies(self):
+    def get_cookies(self) -> str | None:
         if not os.path.exists(self.cookie_dir):
             return None
-        cookies_files = [f for f in os.listdir(self.cookie_dir) if f.endswith(".txt")]
-        if not cookies_files:
+        cookie_files = [f for f in os.listdir(self.cookie_dir) if f.endswith(".txt")]
+        if not cookie_files:
             return None
-        return os.path.join(self.cookie_dir, random.choice(cookies_files))
+        return os.path.join(self.cookie_dir, random.choice(cookie_files))
 
     async def save_cookies(self, urls: list[str]) -> None:
         logger.info("Saving cookies from urls...")
@@ -194,10 +209,11 @@ class YouTube:
         async with aiohttp.ClientSession() as session:
             for i, url in enumerate(urls):
                 path = f"{self.cookie_dir}/cookie_{i}.txt"
-                if "batbin.me" in url:
-                    link = "https://batbin.me/api/v2/paste/" + url.split("/")[-1]
-                else:
-                    link = url
+                link = (
+                    "https://batbin.me/api/v2/paste/" + url.split("/")[-1]
+                    if "batbin.me" in url
+                    else url
+                )
                 try:
                     async with session.get(link) as resp:
                         resp.raise_for_status()
